@@ -1,0 +1,111 @@
+version: '3.8'
+
+services:
+  # MongoDB
+  mongodb:
+    image: mongo:7.0
+    container_name: healthcare-mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - healthcare-network
+
+  # RabbitMQ
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: healthcare-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - healthcare-network
+
+  # Auth Service
+  auth-service:
+    build: ./backend/auth-service
+    container_name: healthcare-auth-service
+    ports:
+      - "4001:4001"
+    environment:
+      PORT: 4001
+      MONGODB_URI: mongodb://mongodb:27017/healthcare-auth
+      JWT_SECRET: your-super-secret-jwt-key-change-in-production
+      JWT_EXPIRES_IN: 7d
+      RABBITMQ_URL: amqp://rabbitmq:5672
+      FRONTEND_URL: http://localhost:3000
+      NODE_ENV: development
+    depends_on:
+      - mongodb
+      - rabbitmq
+    networks:
+      - healthcare-network
+
+  # Appointment Service
+  appointment-service:
+    build: ./backend/appointment-service
+    container_name: healthcare-appointment-service
+    ports:
+      - "4002:4002"
+    environment:
+      PORT: 4002
+      MONGODB_URI: mongodb://mongodb:27017/healthcare-appointments
+      JWT_SECRET: your-super-secret-jwt-key-change-in-production
+      RABBITMQ_URL: amqp://rabbitmq:5672
+      AUTH_SERVICE_URL: http://auth-service:4001
+      FRONTEND_URL: http://localhost:3000
+      NODE_ENV: development
+    depends_on:
+      - mongodb
+      - rabbitmq
+    networks:
+      - healthcare-network
+
+  # Notification Service
+  notification-service:
+    build: ./backend/notification-service
+    container_name: healthcare-notification-service
+    ports:
+      - "4003:4003"
+    environment:
+      PORT: 4003
+      MONGODB_URI: mongodb://mongodb:27017/healthcare-notifications
+      RABBITMQ_URL: amqp://rabbitmq:5672
+      FRONTEND_URL: http://localhost:3000
+      NODE_ENV: development
+    depends_on:
+      - mongodb
+      - rabbitmq
+    networks:
+      - healthcare-network
+
+  # Frontend
+  frontend:
+    build: ./frontend
+    container_name: healthcare-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_AUTH_API_URL: http://localhost:4001
+      NEXT_PUBLIC_APPOINTMENT_API_URL: http://localhost:4002
+      NEXT_PUBLIC_NOTIFICATION_API_URL: http://localhost:4003
+    depends_on:
+      - auth-service
+      - appointment-service
+      - notification-service
+    networks:
+      - healthcare-network
+
+volumes:
+  mongodb_data:
+  rabbitmq_data:
+
+networks:
+  healthcare-network:
+    driver: bridge
